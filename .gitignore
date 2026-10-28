@@ -5,3 +5,7 @@ __pycache__/
 *.pyc
 .terraform/
 *.tfstate*
+
+terraform.tfvars
+*.auto.tfvars
+backend.hcl

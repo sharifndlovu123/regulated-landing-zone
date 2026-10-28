@@ -1,0 +1,5 @@
+# Copy to backend.hcl (git-ignored) and paste the output of `terraform output backend_config` from ../bootstrap.
+resource_group_name  = "rg-tfstate-lz-san"
+storage_account_name = "stlztfxxxxxxxx"
+container_name       = "tfstate"
+key                  = "regulated-landing-zone.tfstate"
