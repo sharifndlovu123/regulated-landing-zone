@@ -2,6 +2,66 @@
 
 A hub-and-spoke Azure landing zone where every guardrail is code: private-only networking, firewall-inspected traffic, and Azure Policy that blocks non-compliant deployments before they exist.
 
+### Build status
+
+What exists in Azure today, what is written but not yet applied, and what is still to come. The finished design is Diagram 1 below.
+
+```mermaid
+flowchart TD
+  GH["GitHub Actions + OIDC<br/>pipeline (piece 4)"]:::planned
+  FD["Front Door + WAF<br/>(piece 8)"]:::planned
+
+  subgraph SUB["Azure subscription - South Africa North"]
+    subgraph RGS["rg-tfstate-lz-san - bootstrap/"]
+      ST[("Storage account<br/>container: tfstate<br/>no shared keys, versioning on")]:::deployed
+    end
+
+    subgraph RGH["rg-hub-lz-dev-san - infra/"]
+      HUB["Hub VNet<br/>10.10.0.0/22"]:::written
+      FWS["AzureFirewallSubnet<br/>10.10.0.0/24 - reserved"]:::written
+      FW["Azure Firewall + routes<br/>(piece 7, demo-only)"]:::planned
+    end
+
+    subgraph RGA["rg-spoke-app - infra/"]
+      APPV["App spoke VNet<br/>10.20.0.0/22<br/>snet-app + NSG"]:::written
+      APP["Flask app<br/>(piece 6)"]:::planned
+    end
+
+    subgraph RGD["rg-spoke-data - infra/"]
+      DATAV["Data spoke VNet<br/>10.30.0.0/22<br/>snet-data + NSG"]:::written
+      PE["Private endpoints + Private DNS<br/>(piece 6)"]:::planned
+    end
+
+    POL["Management groups + Azure Policy<br/>audit first, then deny (piece 5)"]:::planned
+  end
+
+  HUB --- FWS
+  HUB <-->|"peering"| APPV
+  HUB <-->|"peering"| DATAV
+  FWS -.-> FW
+  APPV --- APP
+  DATAV --- PE
+  FD -.->|"Private Link"| APP
+  APP -.->|"via firewall"| PE
+  POL -.->|"guardrails"| SUB
+  GH -.->|"plan, approve, apply"| SUB
+  RGH -. "Terraform state" .-> ST
+  RGA -. "Terraform state" .-> ST
+  RGD -. "Terraform state" .-> ST
+
+  classDef deployed fill:#d4edda,stroke:#2e7d32,color:#111
+  classDef written fill:#fff3cd,stroke:#b8860b,color:#111
+  classDef planned fill:#f2f2f2,stroke:#888,stroke-dasharray:4 3,color:#333
+```
+
+| Colour | Meaning |
+| --- | --- |
+| Green | Deployed in Azure |
+| Yellow | Code written, not yet applied |
+| Grey dashed | Still to build |
+
+Piece 2 is applied (remote state storage) and the hub resource group exists. The hub-and-spoke network (piece 3) is written and waiting for `terraform apply`.
+
 ### Business use case
 
 A South African bank, insurer or municipality moving workloads into South Africa North has to show POPIA-minded controls: no public endpoints, encryption everywhere, logging on, region locked. Today auditors get spreadsheets. Here they get a live policy compliance report and a Git history of every change.
