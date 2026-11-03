@@ -30,3 +30,20 @@ variable "cost_center" {
   type        = string
   default     = "portfolio"
 }
+
+variable "hub_cidr" {
+  description = "Address space for the hub VNet. See the IP plan in docs/ip-plan.md."
+  type        = string
+  default     = "10.10.0.0/22"
+}
+
+variable "spokes" {
+  description = "Workload spokes. Add an entry to vend a new spoke."
+  type = map(object({
+    cidr = string
+  }))
+  default = {
+    app  = { cidr = "10.20.0.0/22" }
+    data = { cidr = "10.30.0.0/22" }
+  }
+}
