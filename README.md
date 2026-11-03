@@ -9,6 +9,7 @@ What exists in Azure today, what is written but not yet applied, and what is sti
 ```mermaid
 flowchart LR
   TEAM["Platform team (you)<br/>owns the rules, as code in Git"]:::planned
+  ADM["Admin<br/>Azure portal, HTTPS"]:::planned
   GH["GitHub Actions + OIDC<br/>CI/CD pipeline (piece 4)"]:::planned
   FD["Front Door + WAF<br/>public entry point (piece 8)"]:::planned
 
@@ -34,6 +35,7 @@ flowchart LR
       subgraph HUBV["VNet: vnet-hub - 10.10.0.0/22"]
         FWS["Subnet: AzureFirewallSubnet<br/>10.10.0.0/24, reserved"]:::written
         FW["Azure Firewall + route table<br/>(piece 7, demo-only)"]:::planned
+        BAS["Bastion<br/>(optional, demo-only)"]:::planned
       end
     end
 
@@ -42,6 +44,7 @@ flowchart LR
         APPS["Subnet: snet-app<br/>10.20.0.0/24"]:::written
         APPN["NSG: nsg-app<br/>subnet firewall rules"]:::written
         APP["Flask app<br/>(piece 6)"]:::planned
+        VM["VM Scale Set, no public IP<br/>(optional batch tier)"]:::planned
       end
     end
 
@@ -72,9 +75,12 @@ flowchart LR
   R5 -.->|"requires"| PE
 
   %% network and state
-  HUBV <-->|"VNet peering"| APPV
-  HUBV <-->|"VNet peering"| DATAV
+  HUBV <==>|"VNet peering"| APPV
+  HUBV <==>|"VNet peering"| DATAV
   FWS -.-> FW
+  ADM -.->|"TLS 443"| BAS
+  BAS -.->|"SSH / RDP over peering"| VM
+  APPS -.-> VM
   APPN --- APPS
   DATAN --- DATAS
   APPS -.-> APP
@@ -95,6 +101,7 @@ flowchart LR
 | Green | Deployed in Azure |
 | Yellow | Code written, not yet applied |
 | Grey dashed | Still to build |
+| Thick two-way line | VNet peering |
 
 Piece 2 is applied (remote state storage) and the hub resource group exists. The hub-and-spoke network (piece 3) is written and waiting for `terraform apply`.
 
@@ -159,10 +166,12 @@ flowchart LR
       GW["VPN gateway"]
       FW["Azure Firewall<br/>egress + east-west rules"]
       DNSR["Private DNS Resolver"]
-      BAS["Bastion"]
+      DNSZ["Private DNS zones<br/>privatelink.*"]
+      BAS["Bastion<br/>browser-based SSH / RDP"]
     end
     subgraph APPV["Spoke: prod-app VNet"]
       APP["App Service or AKS<br/>VNet integrated"]
+      VM["VM Scale Set<br/>batch tier, no public IP"]
     end
     subgraph DATAV["Spoke: prod-data VNet"]
       PE["Private endpoints<br/>SQL, Storage, Key Vault"]
@@ -173,6 +182,13 @@ flowchart LR
   APP -->|"UDR 0.0.0.0/0"| FW
   FW -->|"allowed flows only"| PE
   GW --> FW
+  HUB <==>|"VNet peering"| APPV
+  HUB <==>|"VNet peering"| DATAV
+  ADM["Admin<br/>Azure portal, HTTPS"] -->|"TLS 443"| BAS
+  BAS -->|"SSH / RDP over VNet peering"| VM
+  ONP -->|"DNS queries for privatelink names"| DNSR
+  DNSR --> DNSZ
+  DNSZ -.->|"resolves names to private IPs"| PE
   subgraph GOV["Tenant governance"]
     MG["Management groups"] --> POL["Azure Policy<br/>deny, audit, deployIfNotExists"]
     POL --> DEF["Defender for Cloud<br/>compliance score"]
@@ -180,7 +196,7 @@ flowchart LR
   POL -.->|"blocks public IPs, public blob, wrong region"| SAN
 ```
 
-> **How to read this:** A user hits Front Door, which reaches the app spoke over Private Link, so the app never needs a public IP. When the app calls the database, a user-defined route sends the packet through the hub firewall, and only then does it reach the private endpoint in the data spoke. The dotted line is governance: Azure Policy sits above all of it and rejects a deployment that breaks the rules.
+> **How to read this:** The hub is joined to each spoke by VNet peering, which is what lets traffic cross between networks; spokes are not peered to each other, so app-to-data traffic must go through the hub firewall. A user hits Front Door, which reaches the app spoke over Private Link, so the app never needs a public IP. When the app calls the database, a user-defined route sends the packet through the hub firewall, and only then does it reach the private endpoint in the data spoke. Admins never get a public IP or an open SSH port: they sign in through the Azure portal, and Bastion opens the session to the VM over VNet peering. Office machines resolve private names (for example a database) through the DNS Resolver, which answers from the Private DNS zones with the private endpoint's address. The dotted line is governance: Azure Policy sits above all of it and rejects a deployment that breaks the rules.
 
 #### Diagram 2 · CI/CD: landing zone changes
 
@@ -250,11 +266,3 @@ flowchart LR
 | VPC endpoint / PrivateLink | Private Endpoint | You must also create and link the privatelink Private DNS zone, or the name still resolves to a public IP. This breaks more first deployments than anything else. |
 | IAM Identity Center | Entra ID + PIM | Identity lives in the tenant, not the subscription. Roles are assigned at a scope and inherit downwards. |
 | Network Firewall | Azure Firewall | Billed every hour it exists. Destroy it between sessions. |
-
-### Résumé pitch
-
-- Designed and codified a hub-and-spoke Azure landing zone in Terraform with \[N\] custom policy definitions, enforcing zero public endpoints across \[N\] spokes.
-- Cut new-environment provisioning from days to under \[N\] minutes by vending spokes through a reviewed pull request and OIDC-authenticated pipeline.
-- Introduced audit-then-deny policy rollout with expiring exemptions, reaching \[N\]% compliance with no production deployment blocked unexpectedly.
-
-> *Replace every \[N\] with a number you measured. If you cannot measure it, remove the claim.*
