@@ -4,50 +4,86 @@ A hub-and-spoke Azure landing zone where every guardrail is code: private-only n
 
 ### Build status
 
-What exists in Azure today, what is written but not yet applied, and what is still to come. The finished design is Diagram 1 below.
+What exists in Azure today, what is written but not yet applied, and what is still to come. The finished design is Diagram 1 below. Boxes are nested the way Azure nests them: resource group, then VNet, then subnet.
 
 ```mermaid
-flowchart TD
-  GH["GitHub Actions + OIDC<br/>pipeline (piece 4)"]:::planned
-  FD["Front Door + WAF<br/>(piece 8)"]:::planned
+flowchart LR
+  TEAM["Platform team (you)<br/>owns the rules, as code in Git"]:::planned
+  GH["GitHub Actions + OIDC<br/>CI/CD pipeline (piece 4)"]:::planned
+  FD["Front Door + WAF<br/>public entry point (piece 8)"]:::planned
 
-  subgraph SUB["Azure subscription - South Africa North"]
-    subgraph RGS["rg-tfstate-lz-san - bootstrap/"]
-      ST[("Storage account<br/>container: tfstate<br/>no shared keys, versioning on")]:::deployed
-    end
-
-    subgraph RGH["rg-hub-lz-dev-san - infra/"]
-      HUB["Hub VNet<br/>10.10.0.0/22"]:::written
-      FWS["AzureFirewallSubnet<br/>10.10.0.0/24 - reserved"]:::written
-      FW["Azure Firewall + routes<br/>(piece 7, demo-only)"]:::planned
-    end
-
-    subgraph RGA["rg-spoke-app - infra/"]
-      APPV["App spoke VNet<br/>10.20.0.0/22<br/>snet-app + NSG"]:::written
-      APP["Flask app<br/>(piece 6)"]:::planned
-    end
-
-    subgraph RGD["rg-spoke-data - infra/"]
-      DATAV["Data spoke VNet<br/>10.30.0.0/22<br/>snet-data + NSG"]:::written
-      PE["Private endpoints + Private DNS<br/>(piece 6)"]:::planned
-    end
-
-    POL["Management groups + Azure Policy<br/>audit first, then deny (piece 5)"]:::planned
+  subgraph GOV["Governance (piece 5) - tenant level"]
+    MG["Management group: mg-landingzone<br/>the scope rules are assigned at"]:::planned
+    DEFN["Policy definitions + initiative<br/>Terraform code in policies/"]:::planned
+    R1["Rule: require tags<br/>owner, environment, cost-center"]:::planned
+    R2["Rule: allowed region<br/>southafricanorth only"]:::planned
+    R3["Rule: deny public blob access"]:::planned
+    R4["Rule: deny public IPs"]:::planned
+    R5["Rule: private endpoints only,<br/>public network access off"]:::planned
+    ARM["Azure Resource Manager<br/>checks every create or update request<br/>against the rules"]:::planned
   end
 
-  HUB --- FWS
-  HUB <-->|"peering"| APPV
-  HUB <-->|"peering"| DATAV
-  FWS -.-> FW
-  APPV --- APP
-  DATAV --- PE
-  FD -.->|"Private Link"| APP
-  APP -.->|"via firewall"| PE
-  POL -.->|"guardrails"| SUB
+  subgraph SUB["Azure subscription - region: South Africa North"]
+    subgraph RGS["Resource group: rg-tfstate-lz-san (bootstrap/)"]
+      subgraph SA["Storage account: stlztf31860625<br/>no shared keys, versioning on"]
+        CT[("Blob container: tfstate<br/>holds the Terraform state file")]:::deployed
+      end
+    end
+
+    subgraph RGH["Resource group: rg-hub-lz-dev-san (infra/)"]
+      subgraph HUBV["VNet: vnet-hub - 10.10.0.0/22"]
+        FWS["Subnet: AzureFirewallSubnet<br/>10.10.0.0/24, reserved"]:::written
+        FW["Azure Firewall + route table<br/>(piece 7, demo-only)"]:::planned
+      end
+    end
+
+    subgraph RGA["Resource group: rg-spoke-app-lz-dev-san (infra/)"]
+      subgraph APPV["VNet: vnet-spoke-app - 10.20.0.0/22"]
+        APPS["Subnet: snet-app<br/>10.20.0.0/24"]:::written
+        APPN["NSG: nsg-app<br/>subnet firewall rules"]:::written
+        APP["Flask app<br/>(piece 6)"]:::planned
+      end
+    end
+
+    subgraph RGD["Resource group: rg-spoke-data-lz-dev-san (infra/)"]
+      subgraph DATAV["VNet: vnet-spoke-data - 10.30.0.0/22"]
+        DATAS["Subnet: snet-data<br/>10.30.0.0/24"]:::written
+        DATAN["NSG: nsg-data<br/>subnet firewall rules"]:::written
+        PE["Private endpoints + Private DNS<br/>(piece 6)"]:::planned
+      end
+    end
+  end
+
+  %% who controls the guardrails
+  TEAM -.->|"pull request"| DEFN
+  DEFN -.->|"applied by"| GH
   GH -.->|"plan, approve, apply"| SUB
-  RGH -. "Terraform state" .-> ST
-  RGA -. "Terraform state" .-> ST
-  RGD -. "Terraform state" .-> ST
+  GH -.->|"assigns rules at"| MG
+  MG -.->|"contains"| SUB
+  MG --- ARM
+  DEFN --- R1 & R2 & R3 & R4 & R5
+
+  %% what each rule acts on
+  R1 -.->|"every resource group"| SUB
+  R2 -.->|"deployments"| SUB
+  R3 -.->|"blocks"| SA
+  R4 -.->|"blocks"| APPV
+  R4 -.->|"blocks"| DATAV
+  R5 -.->|"requires"| PE
+
+  %% network and state
+  HUBV <-->|"VNet peering"| APPV
+  HUBV <-->|"VNet peering"| DATAV
+  FWS -.-> FW
+  APPN --- APPS
+  DATAN --- DATAS
+  APPS -.-> APP
+  DATAS -.-> PE
+  FD -.->|"Private Link"| APP
+  APP -.->|"routed via the hub firewall"| PE
+  RGH -. "state file" .-> CT
+  RGA -. "state file" .-> CT
+  RGD -. "state file" .-> CT
 
   classDef deployed fill:#d4edda,stroke:#2e7d32,color:#111
   classDef written fill:#fff3cd,stroke:#b8860b,color:#111
@@ -61,6 +97,24 @@ flowchart TD
 | Grey dashed | Still to build |
 
 Piece 2 is applied (remote state storage) and the hub resource group exists. The hub-and-spoke network (piece 3) is written and waiting for `terraform apply`.
+
+**Who controls the guardrails.** The platform team writes the rules as Terraform in Git and changes them only by pull request. The pipeline assigns them to the management group, and Azure Resource Manager (Azure's own control plane) then checks every create or update request against them, whatever tool or person sent it. See [docs/policy-rollout.md](docs/policy-rollout.md) for how a rule is rolled out safely.
+
+**Permissions.** Creating policy definitions, policy assignments and management groups needs rights that the Contributor role does not include (for example Resource Policy Contributor, or Owner). Piece 5 depends on getting those.
+
+| Term | What it is |
+| --- | --- |
+| **Resource group** | A folder for related Azure resources. Deleting it deletes everything inside. |
+| **VNet** (virtual network) | A private network with its own IP range. Nothing outside can reach it unless you connect it. |
+| **Subnet** | A slice of a VNet's IP range. Resources are placed in a subnet. |
+| **NSG** (network security group) | A set of allow/deny rules attached to a subnet. |
+| **VNet peering** | A private link between two VNets. Works in one direction only, so each link needs one on each side, and it is not transitive. |
+| **Hub / spoke** | The hub holds shared services (firewall). Spokes hold workloads and talk to each other only through the hub. |
+| **Storage account / blob container** | The account is the top-level storage resource. A container inside it holds files, here the Terraform state. |
+| **Private endpoint** | A private IP inside your subnet that points at an Azure service such as SQL or Key Vault, so it needs no public address. |
+| **Management group** | A level above subscriptions. Rules assigned to it apply to every subscription under it. |
+| **Azure Policy** | Rules Azure itself enforces on resources: audit, deny, or auto-fix. |
+| **Azure Resource Manager** | The Azure control plane that every create, update or delete request passes through. This is where policy is checked. |
 
 ### Business use case
 
@@ -98,7 +152,7 @@ R300 to R900 a month if you apply for a few hours and destroy. Left running, Azu
 #### Diagram 1 · Architecture: hub, spokes and governance
 
 ```mermaid
-flowchart TD
+flowchart LR
   U["Users and partners"] -->|"HTTPS"| FD["Front Door + WAF<br/>global edge"]
   subgraph SAN["South Africa North - Johannesburg - 3 AZs"]
     subgraph HUB["Hub VNet"]
@@ -131,7 +185,7 @@ flowchart TD
 #### Diagram 2 · CI/CD: landing zone changes
 
 ```mermaid
-flowchart TD
+flowchart LR
   A["Commit or pull request"] --> B["Validate<br/>terraform fmt, validate, tflint"]
   B --> C["Scan<br/>Checkov and conftest on the plan"]
   C --> D["Plan<br/>terraform plan posted on the PR"]
@@ -149,7 +203,7 @@ flowchart TD
 #### Diagram 3 · Hard piece: shipping a policy safely
 
 ```mermaid
-flowchart TD
+flowchart LR
   A["PR changes a policy definition"] --> B["Unit test<br/>conftest on the Terraform plan"]
   B --> C["Deploy initiative in audit mode<br/>to the nonprod management group"]
   C --> D["Compliance scan<br/>list non-compliant resources"]
