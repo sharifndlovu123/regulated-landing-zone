@@ -121,3 +121,15 @@ Resource groups and the storage account had worked earlier.
 2. Switch the repo back to the old name-only subject through the same API.
 
 **Went with:** option 1. The script now asks GitHub for the exact prefix and updates existing credentials whose subject differs. Needs a re-run with elevated access.
+
+**Result (hiccup 6):** after re-running the script and re-running the failed job (the first attempt ran before Azure had applied the updated credentials), the full pipeline passed on `main`: validate, scan, plan, apply (approved on `dev`, 8 in-place tag changes) and verify. Piece 4 is complete.
+
+## 7. Dependabot pull requests cannot sign in to Azure (expected)
+
+**Symptom:** Dependabot PRs (action version bumps) fail at plan.
+
+**Cause:** GitHub does not give Dependabot runs the normal Actions secrets. They have their own secret store, and the token subject is the same `pull_request`, but the `AZURE_*` secrets are empty.
+
+**Options:** copy the secrets into Dependabot secrets (more places holding IDs), or accept that validate and scan are what Dependabot PRs are checked with and review the plan by hand.
+
+**Went with:** not decided yet. Major version bumps (checkout 4 to 7, github-script 7 to 9, setup-terraform 3 to 4) should be reviewed before merging.

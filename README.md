@@ -19,7 +19,7 @@ What exists in Azure today, what is written but not yet applied, and what is sti
 flowchart LR
   ADM["Admin<br/>Azure portal, HTTPS"]:::planned
   FD["Front Door + WAF<br/>public entry point (piece 8)"]:::planned
-  TF["Terraform in infra/<br/>runs as the service principal"]:::deployed
+  TF["Terraform in infra/<br/>runs from GitHub Actions (OIDC)<br/>or as the service principal locally"]:::deployed
 
   subgraph SUB["Azure subscription - region: South Africa North"]
     subgraph RGS["Resource group: rg-tfstate-lz-san (bootstrap/)"]
@@ -80,7 +80,7 @@ flowchart LR
 flowchart LR
   TEAM["Platform team (you)<br/>writes the rules as code in Git"]:::planned
   DEFN["Policy definitions + initiative<br/>Terraform code in policies/"]:::planned
-  GH["GitHub Actions + OIDC<br/>CI/CD pipeline (piece 4)"]:::planned
+  GH["GitHub Actions + OIDC<br/>CI/CD pipeline (piece 4)"]:::deployed
   MG["Management group: mg-landingzone<br/>the scope rules are assigned at"]:::planned
   ARM["Azure Resource Manager<br/>checks every create or update request<br/>against the rules"]:::planned
 
@@ -109,6 +109,7 @@ flowchart LR
   R4 -.->|"blocks public IPs in"| T4
   R5 -.->|"requires"| T5
 
+  classDef deployed fill:#d4edda,stroke:#2e7d32,color:#111
   classDef planned fill:#f2f2f2,stroke:#888,stroke-dasharray:4 3,color:#333
 ```
 
