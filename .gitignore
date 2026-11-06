@@ -10,3 +10,6 @@ terraform.tfvars
 *.auto.tfvars
 backend.hcl
 *tfplan
+.env
+*.env
+!.env.example
