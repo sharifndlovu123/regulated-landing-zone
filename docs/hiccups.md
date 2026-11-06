@@ -7,7 +7,7 @@ Problems hit while building this project, the options considered, and what we we
 | 1 | Storage data-plane 403 on a keyless account | Fixed |
 | 2 | Role assignment 403 (Contributor cannot assign roles) | Worked around |
 | 3 | `terraform output -raw` rejects the backend output | Fixed |
-| 4 | `400 Request Too Long` on VNets and NSGs | **Open**, fix planned |
+| 4 | `400 Request Too Long` on VNets and NSGs | **In progress**, service principal set up |
 
 ---
 
@@ -77,12 +77,14 @@ Resource groups and the storage account had worked earlier.
 3. Reduce the account's group memberships (tenant admin task). Check the list with
    `az ad user get-member-of --id $(az ad signed-in-user show --query id -o tsv) --query "[].displayName" -o tsv`.
 
+**Why option 3 is out:** the account is a Global Administrator and holds many Entra directory roles, which is where the 133 `wids` come from, so trimming groups would not shrink the token enough.
+
 **Went with:** option 1, a service principal. It also matches piece 4, where the pipeline authenticates with a federated identity (OIDC) and a small token. Retrying with the current login will not work, because the same token is sent every time.
 
 **State of play:** the apply was partial. Some resources, probably the spoke resource groups, exist; the VNets, subnets, NSGs and peerings do not. Re-running `terraform plan` after the fix should show only what is left.
 
-**To do (planned for 2026-11-04):**
-- [ ] Create the service principal and assign the roles (needs a user who can create role assignments).
-- [ ] Add the Terraform-side settings and an example credentials file, with nothing sensitive committed.
-- [ ] Test with `terraform plan` and `apply` in `infra/`.
-- [ ] Update this entry with the result.
+**To do:**
+- [x] Script and docs written: `scripts/create-service-principal.sh`, `docs/service-principal.md`, `infra/.env.example`.
+- [ ] Turn on elevated access, run the script, turn elevated access off again.
+- [ ] `source infra/.env`, then `terraform init -reconfigure` and `terraform plan` in `infra/`.
+- [ ] `terraform apply`, then update this entry with the result.
