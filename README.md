@@ -19,7 +19,7 @@ What exists in Azure today, what is written but not yet applied, and what is sti
 flowchart LR
   ADM["Admin<br/>Azure portal, HTTPS"]:::planned
   FD["Front Door + WAF<br/>public entry point (piece 8)"]:::planned
-  TF["Terraform in infra/<br/>runs as the service principal"]:::written
+  TF["Terraform in infra/<br/>runs as the service principal"]:::deployed
 
   subgraph SUB["Azure subscription - region: South Africa North"]
     subgraph RGS["Resource group: rg-tfstate-lz-san (bootstrap/)"]
@@ -30,7 +30,7 @@ flowchart LR
 
     subgraph RGH["Resource group: rg-hub-lz-dev-san (infra/)"]
       subgraph HUBV["VNet: vnet-hub - 10.10.0.0/22"]
-        FWS["Subnet: AzureFirewallSubnet<br/>10.10.0.0/24, reserved"]:::written
+        FWS["Subnet: AzureFirewallSubnet<br/>10.10.0.0/24, reserved"]:::deployed
         FW["Azure Firewall + route table<br/>(piece 7, demo-only)"]:::planned
         BAS["Bastion<br/>(optional, demo-only)"]:::planned
       end
@@ -38,8 +38,8 @@ flowchart LR
 
     subgraph RGA["Resource group: rg-spoke-app-lz-dev-san (infra/)"]
       subgraph APPV["VNet: vnet-spoke-app - 10.20.0.0/22"]
-        APPN["NSG: nsg-app<br/>subnet firewall rules"]:::written
-        APPS["Subnet: snet-app<br/>10.20.0.0/24"]:::written
+        APPN["NSG: nsg-app<br/>subnet firewall rules"]:::deployed
+        APPS["Subnet: snet-app<br/>10.20.0.0/24"]:::deployed
         APP["Flask app<br/>(piece 6)"]:::planned
         VM["VM Scale Set, no public IP<br/>(optional batch tier)"]:::planned
       end
@@ -47,8 +47,8 @@ flowchart LR
 
     subgraph RGD["Resource group: rg-spoke-data-lz-dev-san (infra/)"]
       subgraph DATAV["VNet: vnet-spoke-data - 10.30.0.0/22"]
-        DATAN["NSG: nsg-data<br/>subnet firewall rules"]:::written
-        DATAS["Subnet: snet-data<br/>10.30.0.0/24"]:::written
+        DATAN["NSG: nsg-data<br/>subnet firewall rules"]:::deployed
+        DATAS["Subnet: snet-data<br/>10.30.0.0/24"]:::deployed
         PE["Private endpoints + Private DNS<br/>(piece 6)"]:::planned
       end
     end
@@ -114,7 +114,7 @@ flowchart LR
 
 How subscriptions and resource groups are divided, and how that compares with production, is in [docs/structure.md](docs/structure.md).
 
-Piece 2 is applied (remote state storage) and the hub resource group exists. The hub-and-spoke network (piece 3) is written and waiting for `terraform apply`. Governance is not started.
+Piece 2 is applied (remote state storage). The hub-and-spoke network (piece 3) is applied: three VNets, three subnets, two NSGs and four peerings, all connected. Governance is not started.
 
 **Who controls the guardrails.** The platform team writes the rules as Terraform in Git and changes them only by pull request. The pipeline assigns them to the management group, and Azure Resource Manager (Azure's own control plane) then checks every create or update request against them, whatever tool or person sent it. See [docs/policy-rollout.md](docs/policy-rollout.md) for how a rule is rolled out safely.
 

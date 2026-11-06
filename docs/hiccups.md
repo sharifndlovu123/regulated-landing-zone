@@ -7,7 +7,7 @@ Problems hit while building this project, the options considered, and what we we
 | 1 | Storage data-plane 403 on a keyless account | Fixed |
 | 2 | Role assignment 403 (Contributor cannot assign roles) | Worked around |
 | 3 | `terraform output -raw` rejects the backend output | Fixed |
-| 4 | `400 Request Too Long` on VNets and NSGs | **In progress**, service principal set up |
+| 4 | `400 Request Too Long` on VNets and NSGs | Fixed with a service principal |
 
 ---
 
@@ -83,8 +83,12 @@ Resource groups and the storage account had worked earlier.
 
 **State of play:** the apply was partial. Some resources, probably the spoke resource groups, exist; the VNets, subnets, NSGs and peerings do not. Re-running `terraform plan` after the fix should show only what is left.
 
-**To do:**
+**Result:** applied successfully as the service principal. Checked in Azure afterwards: 3 VNets (`10.10.0.0/22`, `10.20.0.0/22`, `10.30.0.0/22`), 3 subnets, 2 NSGs and 4 peerings, all `Connected`. The state account also has the two role assignments the script made (Contributor on the subscription, Storage Blob Data Contributor on the state account).
+
+**Checklist:**
 - [x] Script and docs written: `scripts/create-service-principal.sh`, `docs/service-principal.md`, `infra/.env.example`.
-- [ ] Turn on elevated access, run the script, turn elevated access off again.
-- [ ] `source infra/.env`, then `terraform init -reconfigure` and `terraform plan` in `infra/`.
-- [ ] `terraform apply`, then update this entry with the result.
+- [x] Elevated access turned on, script run, elevated access turned off.
+- [x] `source infra/.env`, then `terraform init -reconfigure` and `terraform plan` in `infra/`.
+- [x] `terraform apply` complete.
+
+**Note for later:** the pipeline in piece 4 should use a federated (OIDC) credential on this same identity or a new one, so the client secret can eventually be removed. The secret expires after one year.
