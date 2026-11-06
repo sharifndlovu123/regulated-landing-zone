@@ -5,12 +5,12 @@ locals {
   # Pattern used for every resource: <type>-<workload>-<env>-<region>
   suffix = "lz-${var.environment}-${local.region_short}"
 
-  # Pipeline test: comment-only change, the plan should show no changes.
   # The policy work in a later piece will REQUIRE these tags, so every resource carries them from day one.
   tags = {
     owner       = var.owner
     environment = var.environment
     cost-center = var.cost_center
     managed-by  = "terraform"
+    deployed-by = "github-actions"
   }
 }
