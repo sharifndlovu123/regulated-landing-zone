@@ -112,6 +112,8 @@ flowchart LR
   classDef planned fill:#f2f2f2,stroke:#888,stroke-dasharray:4 3,color:#333
 ```
 
+How subscriptions and resource groups are divided, and how that compares with production, is in [docs/structure.md](docs/structure.md).
+
 Piece 2 is applied (remote state storage) and the hub resource group exists. The hub-and-spoke network (piece 3) is written and waiting for `terraform apply`. Governance is not started.
 
 **Who controls the guardrails.** The platform team writes the rules as Terraform in Git and changes them only by pull request. The pipeline assigns them to the management group, and Azure Resource Manager (Azure's own control plane) then checks every create or update request against them, whatever tool or person sent it. See [docs/policy-rollout.md](docs/policy-rollout.md) for how a rule is rolled out safely.
