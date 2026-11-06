@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_wrapper: false
       - run: terraform fmt -check -recursive
@@ -71,7 +71,7 @@ jobs:
       plan_hash: ${{ steps.plan.outputs.plan_hash }}
     steps:
       - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_wrapper: false
       - name: init
@@ -123,7 +123,7 @@ jobs:
       ARM_CLIENT_ID: ${{ secrets.AZURE_APPLY_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_wrapper: false
       - name: init
@@ -157,7 +157,7 @@ jobs:
       ARM_CLIENT_ID: ${{ secrets.AZURE_PLAN_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_wrapper: false
       - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
