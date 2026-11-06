@@ -99,7 +99,7 @@ jobs:
           sed "s|$SUB_ID|<subscription>|g" plan.txt > plan-clean.txt
       - name: comment the plan on the pull request
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
