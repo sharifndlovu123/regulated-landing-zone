@@ -107,3 +107,17 @@ Resource groups and the storage account had worked earlier.
 **Went with:** option 1. Only the owner has write access, the state holds network resources and no secrets, and the plan identity is read-only. The apply identity cannot be reached from a PR.
 
 **Revisit when:** a collaborator gets write access, or a later piece puts secrets in state. Then move to option 3.
+
+## 6. OIDC login rejected: "No matching federated identity record" (AADSTS700213)
+
+**When:** first pipeline run, the plan job on a pull request.
+
+**Symptom:** `AADSTS700213: No matching federated identity record found for presented assertion subject 'repo:sharifndlovu123@168600445/regulated-landing-zone@1436004487:pull_request'`.
+
+**Cause:** the credentials were created with the subject `repo:sharifndlovu123/regulated-landing-zone:pull_request`, but GitHub now puts the immutable owner and repo IDs in the token subject. Azure compares the subject exactly, so nothing matched. Check with `gh api repos/<owner>/<repo>/actions/oidc/customization/sub`.
+
+**Options:**
+1. Keep the immutable format and update the credentials to match. It survives a repo rename and stops a recreated repo with the same name from inheriting access.
+2. Switch the repo back to the old name-only subject through the same API.
+
+**Went with:** option 1. The script now asks GitHub for the exact prefix and updates existing credentials whose subject differs. Needs a re-run with elevated access.

@@ -15,6 +15,10 @@ STATE_RG="${STATE_RG:-rg-tfstate-lz-san}"
 STATE_ACCOUNT="${STATE_ACCOUNT:?set STATE_ACCOUNT, e.g. STATE_ACCOUNT=stlztf31860625}"
 OWNER_TAG="${TF_OWNER:?set TF_OWNER, the value for the owner tag, e.g. TF_OWNER=sharif}"
 ISSUER="https://token.actions.githubusercontent.com"
+# GitHub may put immutable owner/repo IDs in the token subject (repo:owner@id/name@id:...).
+# Ask GitHub for the exact prefix so the credential subjects match what the token carries.
+SUB_PREFIX="$(gh api "repos/$REPO/actions/oidc/customization/sub" --jq .sub_claim_prefix 2>/dev/null || true)"
+SUB_PREFIX="${SUB_PREFIX:-repo:$REPO}"
 
 SUB_ID="$(az account show --query id -o tsv)"
 TENANT_ID="$(az account show --query tenantId -o tsv)"
@@ -31,9 +35,16 @@ ensure_app() { # name -> prints appId; creates the app registration and its serv
 }
 
 ensure_federated() { # appId credentialName subject
-  local app="$1" cred="$2" subject="$3"
-  if [ "$(az ad app federated-credential list --id "$app" --query "[?name=='$cred'] | length(@)" -o tsv)" = "0" ]; then
+  local app="$1" cred="$2" subject="$3" id current
+  id="$(az ad app federated-credential list --id "$app" --query "[?name=='$cred'].id | [0]" -o tsv)"
+  if [ -z "$id" ]; then
     az ad app federated-credential create --id "$app" --parameters "{\"name\":\"$cred\",\"issuer\":\"$ISSUER\",\"subject\":\"$subject\",\"audiences\":[\"api://AzureADTokenExchange\"]}" -o none
+  else
+    current="$(az ad app federated-credential show --id "$app" --federated-credential-id "$id" --query subject -o tsv)"
+    if [ "$current" != "$subject" ]; then
+      echo "  updating subject of $cred"
+      az ad app federated-credential update --id "$app" --federated-credential-id "$id" --parameters "{\"name\":\"$cred\",\"issuer\":\"$ISSUER\",\"subject\":\"$subject\",\"audiences\":[\"api://AzureADTokenExchange\"]}" -o none
+    fi
   fi
 }
 
@@ -41,14 +52,14 @@ assign() { az role assignment create --assignee "$1" --role "$2" --scope "$3" -o
 
 echo "Plan identity..."
 PLAN_ID="$(ensure_app gha-landing-zone-plan)"
-ensure_federated "$PLAN_ID" github-pull-request "repo:$REPO:pull_request"
-ensure_federated "$PLAN_ID" github-main "repo:$REPO:ref:refs/heads/main"
+ensure_federated "$PLAN_ID" github-pull-request "$SUB_PREFIX:pull_request"
+ensure_federated "$PLAN_ID" github-main "$SUB_PREFIX:ref:refs/heads/main"
 assign "$PLAN_ID" "Reader" "/subscriptions/$SUB_ID"
 assign "$PLAN_ID" "Storage Blob Data Reader" "$STATE_SCOPE"
 
 echo "Apply identity..."
 APPLY_ID="$(ensure_app gha-landing-zone-apply)"
-ensure_federated "$APPLY_ID" "github-env-$GH_ENV" "repo:$REPO:environment:$GH_ENV"
+ensure_federated "$APPLY_ID" "github-env-$GH_ENV" "$SUB_PREFIX:environment:$GH_ENV"
 assign "$APPLY_ID" "Contributor" "/subscriptions/$SUB_ID"
 assign "$APPLY_ID" "Storage Blob Data Contributor" "$STATE_SCOPE"
 
