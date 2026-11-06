@@ -4,29 +4,26 @@ A hub-and-spoke Azure landing zone where every guardrail is code: private-only n
 
 ### Build status
 
-What exists in Azure today, what is written but not yet applied, and what is still to come. The finished design is Diagram 1 below. Boxes are nested the way Azure nests them: resource group, then VNet, then subnet.
+What exists in Azure today, what is written but not yet applied, and what is still to come. The finished design is Diagram 1 below. It is shown as two views: the network and state, then the governance that sits over it. Boxes are nested the way Azure nests them: resource group, then VNet, then subnet.
+
+| Colour | Meaning |
+| --- | --- |
+| Green | Deployed in Azure |
+| Yellow | Code written, not yet applied |
+| Grey dashed | Still to build |
+| Thick two-way line | VNet peering |
+
+#### Network and state
 
 ```mermaid
 flowchart LR
-  TEAM["Platform team (you)<br/>owns the rules, as code in Git"]:::planned
   ADM["Admin<br/>Azure portal, HTTPS"]:::planned
-  GH["GitHub Actions + OIDC<br/>CI/CD pipeline (piece 4)"]:::planned
   FD["Front Door + WAF<br/>public entry point (piece 8)"]:::planned
-
-  subgraph GOV["Governance (piece 5) - tenant level"]
-    MG["Management group: mg-landingzone<br/>the scope rules are assigned at"]:::planned
-    DEFN["Policy definitions + initiative<br/>Terraform code in policies/"]:::planned
-    R1["Rule: require tags<br/>owner, environment, cost-center"]:::planned
-    R2["Rule: allowed region<br/>southafricanorth only"]:::planned
-    R3["Rule: deny public blob access"]:::planned
-    R4["Rule: deny public IPs"]:::planned
-    R5["Rule: private endpoints only,<br/>public network access off"]:::planned
-    ARM["Azure Resource Manager<br/>checks every create or update request<br/>against the rules"]:::planned
-  end
+  TF["Terraform in infra/<br/>runs as the service principal"]:::written
 
   subgraph SUB["Azure subscription - region: South Africa North"]
     subgraph RGS["Resource group: rg-tfstate-lz-san (bootstrap/)"]
-      subgraph SA["Storage account: stlztf31860625<br/>no shared keys, versioning on"]
+      subgraph SA["Storage account: stlztf31860625"]
         CT[("Blob container: tfstate<br/>holds the Terraform state file")]:::deployed
       end
     end
@@ -41,8 +38,8 @@ flowchart LR
 
     subgraph RGA["Resource group: rg-spoke-app-lz-dev-san (infra/)"]
       subgraph APPV["VNet: vnet-spoke-app - 10.20.0.0/22"]
-        APPS["Subnet: snet-app<br/>10.20.0.0/24"]:::written
         APPN["NSG: nsg-app<br/>subnet firewall rules"]:::written
+        APPS["Subnet: snet-app<br/>10.20.0.0/24"]:::written
         APP["Flask app<br/>(piece 6)"]:::planned
         VM["VM Scale Set, no public IP<br/>(optional batch tier)"]:::planned
       end
@@ -50,64 +47,76 @@ flowchart LR
 
     subgraph RGD["Resource group: rg-spoke-data-lz-dev-san (infra/)"]
       subgraph DATAV["VNet: vnet-spoke-data - 10.30.0.0/22"]
-        DATAS["Subnet: snet-data<br/>10.30.0.0/24"]:::written
         DATAN["NSG: nsg-data<br/>subnet firewall rules"]:::written
+        DATAS["Subnet: snet-data<br/>10.30.0.0/24"]:::written
         PE["Private endpoints + Private DNS<br/>(piece 6)"]:::planned
       end
     end
   end
 
-  %% who controls the guardrails
-  TEAM -.->|"pull request"| DEFN
-  DEFN -.->|"applied by"| GH
-  GH -.->|"plan, approve, apply"| SUB
-  GH -.->|"assigns rules at"| MG
-  MG -.->|"contains"| SUB
-  MG --- ARM
-  DEFN --- R1 & R2 & R3 & R4 & R5
-
-  %% what each rule acts on
-  R1 -.->|"every resource group"| SUB
-  R2 -.->|"deployments"| SUB
-  R3 -.->|"blocks"| SA
-  R4 -.->|"blocks"| APPV
-  R4 -.->|"blocks"| DATAV
-  R5 -.->|"requires"| PE
-
-  %% network and state
   HUBV <==>|"VNet peering"| APPV
   HUBV <==>|"VNet peering"| DATAV
   FWS -.-> FW
-  ADM -.->|"TLS 443"| BAS
-  BAS -.->|"SSH / RDP over peering"| VM
-  APPS -.-> VM
   APPN --- APPS
   DATAN --- DATAS
   APPS -.-> APP
+  APPS -.-> VM
   DATAS -.-> PE
+  ADM -.->|"TLS 443"| BAS
+  BAS -.->|"SSH / RDP over peering"| VM
   FD -.->|"Private Link"| APP
   APP -.->|"routed via the hub firewall"| PE
-  RGH -. "state file" .-> CT
-  RGA -. "state file" .-> CT
-  RGD -. "state file" .-> CT
+  TF -.->|"reads and writes state"| CT
+  TF -.->|"creates"| SUB
 
   classDef deployed fill:#d4edda,stroke:#2e7d32,color:#111
   classDef written fill:#fff3cd,stroke:#b8860b,color:#111
   classDef planned fill:#f2f2f2,stroke:#888,stroke-dasharray:4 3,color:#333
 ```
 
-| Colour | Meaning |
-| --- | --- |
-| Green | Deployed in Azure |
-| Yellow | Code written, not yet applied |
-| Grey dashed | Still to build |
-| Thick two-way line | VNet peering |
+#### Governance (piece 5)
 
-Piece 2 is applied (remote state storage) and the hub resource group exists. The hub-and-spoke network (piece 3) is written and waiting for `terraform apply`.
+```mermaid
+flowchart LR
+  TEAM["Platform team (you)<br/>writes the rules as code in Git"]:::planned
+  DEFN["Policy definitions + initiative<br/>Terraform code in policies/"]:::planned
+  GH["GitHub Actions + OIDC<br/>CI/CD pipeline (piece 4)"]:::planned
+  MG["Management group: mg-landingzone<br/>the scope rules are assigned at"]:::planned
+  ARM["Azure Resource Manager<br/>checks every create or update request<br/>against the rules"]:::planned
+
+  TEAM -->|"pull request"| DEFN
+  DEFN -->|"applied by"| GH
+  GH -->|"assigns at"| MG
+  MG -->|"enforced by"| ARM
+
+  R1["Rule: require tags<br/>owner, environment, cost-center"]:::planned
+  R2["Rule: allowed region<br/>southafricanorth only"]:::planned
+  R3["Rule: deny public blob access"]:::planned
+  R4["Rule: deny public IPs"]:::planned
+  R5["Rule: private endpoints only,<br/>public network access off"]:::planned
+
+  ARM --> R1 & R2 & R3 & R4 & R5
+
+  T1["Every resource group"]:::planned
+  T2["Every deployment in the subscription"]:::planned
+  T3["Storage accounts, including the state account"]:::planned
+  T4["VNets: app and data spokes"]:::planned
+  T5["Private endpoints in the data spoke"]:::planned
+
+  R1 -.->|"acts on"| T1
+  R2 -.->|"acts on"| T2
+  R3 -.->|"blocks public access on"| T3
+  R4 -.->|"blocks public IPs in"| T4
+  R5 -.->|"requires"| T5
+
+  classDef planned fill:#f2f2f2,stroke:#888,stroke-dasharray:4 3,color:#333
+```
+
+Piece 2 is applied (remote state storage) and the hub resource group exists. The hub-and-spoke network (piece 3) is written and waiting for `terraform apply`. Governance is not started.
 
 **Who controls the guardrails.** The platform team writes the rules as Terraform in Git and changes them only by pull request. The pipeline assigns them to the management group, and Azure Resource Manager (Azure's own control plane) then checks every create or update request against them, whatever tool or person sent it. See [docs/policy-rollout.md](docs/policy-rollout.md) for how a rule is rolled out safely.
 
-**Permissions.** Creating policy definitions, policy assignments and management groups needs rights that the Contributor role does not include (for example Resource Policy Contributor, or Owner). Piece 5 depends on getting those.
+**Permissions.** Creating policy definitions, policy assignments and management groups needs rights that the Contributor role does not include (for example Resource Policy Contributor, or Owner). Piece 5 depends on getting those. Terraform itself runs as a service principal; see [docs/service-principal.md](docs/service-principal.md).
 
 | Term | What it is |
 | --- | --- |
