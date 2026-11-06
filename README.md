@@ -114,6 +114,8 @@ flowchart LR
 
 How subscriptions and resource groups are divided, and how that compares with production, is in [docs/structure.md](docs/structure.md).
 
+The pipeline that plans, scans, approves and applies the Terraform is described in [docs/pipeline.md](docs/pipeline.md). The tools and actions used, with links to their docs, are listed in [docs/tools.md](docs/tools.md).
+
 Piece 2 is applied (remote state storage). The hub-and-spoke network (piece 3) is applied: three VNets, three subnets, two NSGs and four peerings, all connected. Governance is not started.
 
 **Who controls the guardrails.** The platform team writes the rules as Terraform in Git and changes them only by pull request. The pipeline assigns them to the management group, and Azure Resource Manager (Azure's own control plane) then checks every create or update request against them, whatever tool or person sent it. See [docs/policy-rollout.md](docs/policy-rollout.md) for how a rule is rolled out safely.

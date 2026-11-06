@@ -1,0 +1,185 @@
+name: terraform
+
+# Pull request: validate, scan, plan (read-only), post the plan as a comment.
+# Push to main: the same, then wait for approval on the "dev" environment, apply, verify.
+on:
+  pull_request:
+    paths: ["infra/**", ".github/workflows/terraform.yml"]
+  push:
+    branches: [main]
+    paths: ["infra/**", ".github/workflows/terraform.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  ARM_USE_OIDC: "true"
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_owner: ${{ vars.TF_OWNER }}
+
+defaults:
+  run:
+    working-directory: infra
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+      - uses: terraform-linters/setup-tflint@90f302c255ef959cbfb4bd10581afecdb7ece3e6 # v4
+      - name: tflint
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          tflint --init --config ../.tflint.hcl
+          tflint --config ../.tflint.hcl
+
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bridgecrewio/checkov-action@45edc9d8856b664db2ec251f5f8632361f0a67aa # v12
+        with:
+          directory: infra
+          framework: terraform
+          quiet: true
+
+  plan:
+    needs: [validate, scan]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_PLAN_CLIENT_ID }}
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
+      plan_hash: ${{ steps.plan.outputs.plan_hash }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_wrapper: false
+      - name: init
+        run: |
+          terraform init -input=false \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RG }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_ACCOUNT }}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=regulated-landing-zone.tfstate"
+      - name: plan (read-only, no state lock)
+        id: plan
+        env:
+          SUB_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          set +e
+          terraform plan -input=false -lock=false -no-color -detailed-exitcode -out=tfplan > plan.txt 2>&1
+          code=$?
+          set -e
+          cat plan.txt
+          if [ "$code" -eq 1 ]; then exit 1; fi
+          echo "has_changes=$([ "$code" -eq 2 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          terraform show -no-color tfplan > plan-show.txt
+          echo "plan_hash=$(sha256sum plan-show.txt | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          # public repo: never put the subscription ID in a comment
+          sed "s|$SUB_ID|<subscription>|g" plan.txt > plan-clean.txt
+      - name: comment the plan on the pull request
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = fs.readFileSync('infra/plan-clean.txt', 'utf8');
+            if (body.length > 60000) body = body.slice(0, 60000) + '\n... truncated ...';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
+              body: '### Terraform plan\n\n```\n' + body + '\n```',
+            });
+
+  apply:
+    # Runs only on main, only if the plan has changes, and only after a reviewer approves the "dev" environment.
+    needs: plan
+    if: github.event_name == 'push' && needs.plan.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_APPLY_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_wrapper: false
+      - name: init
+        run: |
+          terraform init -input=false \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RG }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_ACCOUNT }}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=regulated-landing-zone.tfstate"
+      - name: re-plan and check it is the plan that was approved
+        env:
+          APPROVED_HASH: ${{ needs.plan.outputs.plan_hash }}
+        run: |
+          terraform plan -input=false -no-color -out=tfplan > /dev/null
+          terraform show -no-color tfplan > plan-show.txt
+          actual="$(sha256sum plan-show.txt | cut -d' ' -f1)"
+          if [ "$actual" != "$APPROVED_HASH" ]; then
+            echo "::error::The plan changed since it was shown for approval. Re-run the workflow."
+            exit 1
+          fi
+      - name: apply
+        run: terraform apply -input=false tfplan
+
+  verify:
+    needs: apply
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_PLAN_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_wrapper: false
+      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
+        with:
+          client-id: ${{ secrets.AZURE_PLAN_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: connectivity - every VNet peering must be Connected
+        run: |
+          bad=0
+          while read -r rg vnet; do
+            while read -r name state; do
+              echo "$vnet / $name: $state"
+              [ "$state" = "Connected" ] || bad=1
+            done < <(az network vnet peering list -g "$rg" --vnet-name "$vnet" --query "[].[name,peeringState]" -o tsv)
+          done < <(az network vnet list --query "[?starts_with(resourceGroup, 'rg-') && contains(name, '-lz-')].[resourceGroup,name]" -o tsv)
+          exit $bad
+      - name: drift - code and Azure must now match
+        run: |
+          terraform init -input=false \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RG }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_ACCOUNT }}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=regulated-landing-zone.tfstate"
+          terraform plan -input=false -lock=false -no-color -detailed-exitcode > /dev/null
