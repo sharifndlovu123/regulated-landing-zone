@@ -92,3 +92,18 @@ Resource groups and the storage account had worked earlier.
 - [x] `terraform apply` complete.
 
 **Note for later:** the pipeline in piece 4 should use a federated (OIDC) credential on this same identity or a new one, so the client secret can eventually be removed. The secret expires after one year.
+
+## 5. Pull request plans can read the state (accepted risk)
+
+**When:** piece 4, found by an automated security review of the pipeline.
+
+**Issue:** the PR plan job signs in as the plan identity, which has Storage Blob Data Reader on the state account. A PR from a branch in this repo runs the workflow from that branch, so anyone with write access could change it to print the state. Fork PRs get no secrets and cannot do this.
+
+**Options:**
+1. Accept the risk and document it.
+2. PRs run only validate and scan; plan runs on `main` after merge. No plan comment on the PR.
+3. Federate the PR credential to an approval-gated `plan` environment (`environment:plan`). Keeps the comment but needs a click on every PR.
+
+**Went with:** option 1. Only the owner has write access, the state holds network resources and no secrets, and the plan identity is read-only. The apply identity cannot be reached from a PR.
+
+**Revisit when:** a collaborator gets write access, or a later piece puts secrets in state. Then move to option 3.

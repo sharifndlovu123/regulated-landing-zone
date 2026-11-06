@@ -84,4 +84,5 @@ Expect validate, scan and plan to run on the PR, with the plan posted as a comme
 - The workflow uses `pull_request`, not `pull_request_target`, so pull requests from forks get no secrets and no Azure access.
 - In the repo's **Settings → Actions → General**, set "Fork pull request workflows" to require approval for all outside collaborators.
 - Third-party actions (setup-terraform, azure/login, setup-tflint, Checkov) are pinned to full commit SHAs, with the version in a comment, because the jobs that use them can sign in to Azure. Dependabot opens weekly pull requests to update them, and each one goes through this same pipeline. GitHub's own `actions/*` stay on major tags.
+- **Accepted risk:** the PR plan identity can read the state, so anyone with write access to the repo could change the workflow to print it. The state holds no secrets today and only the owner has write access. Revisit before adding collaborators or storing secrets in state; see [hiccups.md](hiccups.md), entry 5.
 - The `dev` environment needs your approval even if someone else could push to `main`.
